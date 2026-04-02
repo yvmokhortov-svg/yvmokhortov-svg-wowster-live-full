@@ -1,0 +1,602 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  VIEWER
+  STUDENT
+  TEACHER
+  GUEST
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum StreamType {
+  SCHOOL
+  GUEST
+}
+
+enum StreamStatus {
+  LIVE
+  OFFLINE
+  ENDED
+}
+
+enum StreamRecordingStatus {
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
+enum BundleType {
+  STICKERS
+  GIFTS
+}
+
+enum CustomGroupOrderStatus {
+  DRAFT
+  CHECKOUT_SENT
+  PAID
+  ACTIVE
+  CLOSED
+  CANCELED
+}
+
+enum CustomGroupSeatStatus {
+  AVAILABLE
+  CLAIMED
+  CANCELED
+}
+
+enum TransactionType {
+  SUBSCRIPTION
+  SWITCH
+  SECOND_SUBSCRIPTION
+  UPGRADE_QNA
+  STICKER
+  GIFT
+  BUNDLE
+  DONATION
+  INTERNAL_MIRROR
+}
+
+enum Provider {
+  TWOCHECKOUT
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum LikeTargetType {
+  PROFILE
+  GRADUATION_WORK
+}
+
+enum AdminTaskType {
+  REPORT
+  FLAG
+  SUPPORT
+}
+
+enum AdminTaskStatus {
+  OPEN
+  CLOSED
+}
+
+enum AccountGrantType {
+  FREE_LESSONS
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  role               Role      @default(VIEWER)
+  nickname           String
+  avatarUrl          String?   @map("avatar_url")
+  age                Int?
+  country            String?
+  favoriteColor      String?   @map("favorite_color")
+  strengthAnswer     String?   @map("strength_answer")
+  allowGradVisible   Boolean   @default(false) @map("allow_grad_visible")
+  trialAttendedCount Int       @default(0) @map("trial_attended_count")
+  bannedAt           DateTime? @map("banned_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  subscriptions       Subscription[]
+  uploads             Upload[]
+  transactions        Transaction[]
+  entitlements        Entitlement[]
+  bundles             Bundle[]
+  likes               Like[]         @relation("Liker")
+  teachingClasses     Class[]        @relation("TeacherClasses")
+  ownedStreams        Stream[]       @relation("OwnerStreams")
+  graduationDecisions Graduation[]   @relation("GraduationDecider")
+  featuredAsStudent   FeaturedSlot[] @relation("FeaturedStudent")
+  featuredAsAdmin     FeaturedSlot[] @relation("FeaturedAdmin")
+  grants              AccountGrant[] @relation("UserAccountGrants")
+  grantsCreated       AccountGrant[] @relation("AdminAccountGrants")
+  adminTasksCreated   AdminTask[]    @relation("AdminTaskCreator")
+  adminTasksAssigned  AdminTask[]    @relation("AdminTaskAssignee")
+  deviceSession       DeviceSession?
+  trialAttendances    TrialAttendance[]
+  chatMessages        ChatMessage[]
+  customGroupOrdersCreated CustomGroupOrder[] @relation("CustomGroupOrderAdmin")
+  customGroupOrdersManaged CustomGroupOrder[] @relation("CustomGroupOrderGroupAdmin")
+  claimedCustomGroupSeats  CustomGroupSeat[]  @relation("CustomGroupSeatClaimant")
+  recordingDownloads  RecordingDownloadAudit[]
+  updatedPageContentBlocks PageContentBlock[] @relation("PageContentBlockUpdater")
+
+  @@map("users")
+}
+
+model House {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  classes Class[]
+
+  @@map("houses")
+}
+
+model Class {
+  id            String   @id @default(cuid())
+  houseId       String   @map("house_id")
+  level         Int      @default(1)
+  teacherId     String   @map("teacher_id")
+  dayPattern    String   @map("day_pattern")
+  time          String
+  timezone      String
+  lessonMinutes Int      @map("lesson_minutes")
+  qnaMinutes    Int      @default(15) @map("qna_minutes")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  house         House           @relation(fields: [houseId], references: [id])
+  teacher       User            @relation("TeacherClasses", fields: [teacherId], references: [id])
+  subscriptions Subscription[]
+  uploads       Upload[]
+  streams       Stream[]
+
+  @@index([houseId, dayPattern, time])
+  @@map("classes")
+}
+
+model Subscription {
+  id                  String             @id @default(cuid())
+  userId              String             @map("user_id")
+  status              SubscriptionStatus
+  tierPriceCents      Int                @map("tier_price_cents")
+  classId             String             @map("class_id")
+  billingAnchor       DateTime?          @map("billing_anchor")
+  renewalDate         DateTime?          @map("renewal_date")
+  switchUsedThisCycle Boolean            @default(false) @map("switch_used_this_cycle")
+  planCode            String?            @map("plan_code")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  class       Class        @relation(fields: [classId], references: [id])
+  uploads     Upload[]
+  graduations Graduation[]
+
+  @@index([userId, status])
+  @@map("subscriptions")
+}
+
+model Upload {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  subscriptionId String   @map("subscription_id")
+  classId        String   @map("class_id")
+  slotIndex      Int      @map("slot_index")
+  imageUrl       String   @map("image_url")
+  feedbackText   String?  @map("feedback_text")
+  tasksText      String?  @map("tasks_text")
+  aiFeedbackText String?  @map("ai_feedback_text")
+  isHidden       Boolean  @default(false) @map("is_hidden")
+  isExplicitFlag Boolean  @default(false) @map("is_explicit_flag")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user              User         @relation(fields: [userId], references: [id])
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+  class             Class        @relation(fields: [classId], references: [id])
+  eighthGraduations Graduation[] @relation("GraduationEighthUpload")
+
+  @@index([subscriptionId, slotIndex])
+  @@map("uploads")
+}
+
+model Graduation {
+  id                 String    @id @default(cuid())
+  subscriptionId     String    @map("subscription_id")
+  monthKey           String    @map("month_key")
+  eighthUploadId     String?   @map("eighth_upload_id")
+  approvedBool       Boolean?  @map("approved_bool")
+  decidedByTeacherId String?   @map("decided_by_teacher_id")
+  decidedAt          DateTime? @map("decided_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id])
+  eighthUpload     Upload?      @relation("GraduationEighthUpload", fields: [eighthUploadId], references: [id], onDelete: SetNull)
+  decidedByTeacher User?        @relation("GraduationDecider", fields: [decidedByTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([subscriptionId, monthKey])
+  @@map("graduations")
+}
+
+model StickerCatalog {
+  id         String   @id @default(cuid())
+  name       String
+  imageUrl   String   @map("image_url")
+  priceCents Int      @map("price_cents")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("sticker_catalog")
+}
+
+model GiftCatalog {
+  id         String   @id @default(cuid())
+  name       String
+  imageUrl   String   @map("image_url")
+  priceCents Int      @map("price_cents")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("gift_catalog")
+}
+
+model Entitlement {
+  id                    String   @id @default(cuid())
+  userId                String   @map("user_id")
+  monthKey              String   @map("month_key")
+  freeStickersRemaining Int      @map("free_stickers_remaining")
+  source                String
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, monthKey, source])
+  @@map("entitlements")
+}
+
+model Bundle {
+  id                String     @id @default(cuid())
+  userId            String     @map("user_id")
+  type              BundleType
+  totalItems        Int        @map("total_items")
+  remainingItems    Int        @map("remaining_items")
+  perItemValueCents Int        @map("per_item_value_cents")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, type])
+  @@map("bundles")
+}
+
+model ChatBundlePricing {
+  id               String     @id @default(cuid())
+  type             BundleType @unique
+  bundlePriceCents Int        @map("bundle_price_cents")
+  totalItems       Int        @map("total_items")
+  active           Boolean    @default(true)
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  @@map("chat_bundle_pricing")
+}
+
+model Stream {
+  id           String       @id @default(cuid())
+  type         StreamType
+  ownerId      String       @map("owner_id")
+  classId      String?      @map("class_id")
+  status       StreamStatus @default(OFFLINE)
+  roomName     String       @map("room_name")
+  startedAt    DateTime?    @map("started_at")
+  endedAt      DateTime?    @map("ended_at")
+  recordingUrl String?      @map("recording_url")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  owner User   @relation("OwnerStreams", fields: [ownerId], references: [id])
+  class Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  trialAttendances TrialAttendance[]
+  chatMessages     ChatMessage[]
+  recording        StreamRecording?
+
+  @@index([status, type])
+  @@map("streams")
+}
+
+model StreamRecording {
+  id               String              @id @default(cuid())
+  streamId         String              @unique @map("stream_id")
+  status           StreamRecordingStatus @default(PROCESSING)
+  storageProvider  String              @default("DO_SPACES") @map("storage_provider")
+  objectKey        String?             @map("object_key")
+  downloadUrl      String?             @map("download_url")
+  mimeType         String?             @map("mime_type")
+  sizeBytes        BigInt?             @map("size_bytes")
+  durationSeconds  Int?                @map("duration_seconds")
+  recordedStartedAt DateTime?          @map("recorded_started_at")
+  recordedEndedAt  DateTime?           @map("recorded_ended_at")
+  availableAt      DateTime?           @map("available_at")
+  expiresAt        DateTime            @map("expires_at")
+  expiredAt        DateTime?           @map("expired_at")
+  failureReason    String?             @map("failure_reason")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  stream         Stream                  @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  downloadAudits RecordingDownloadAudit[]
+
+  @@index([status, expiresAt])
+  @@index([recordedEndedAt])
+  @@map("stream_recordings")
+}
+
+model RecordingDownloadAudit {
+  id          String   @id @default(cuid())
+  recordingId String   @map("recording_id")
+  adminUserId String   @map("admin_user_id")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  recording StreamRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  adminUser User            @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId, createdAt])
+  @@index([adminUserId, createdAt])
+  @@map("recording_download_audits")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  streamId  String   @map("stream_id")
+  userId    String   @map("user_id")
+  message   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([streamId, createdAt])
+  @@index([userId, createdAt])
+  @@map("chat_messages")
+}
+
+model Transaction {
+  id           String            @id @default(cuid())
+  userId       String            @map("user_id")
+  type         TransactionType
+  amountCents  Int               @map("amount_cents")
+  provider     Provider          @default(TWOCHECKOUT)
+  providerTxId String            @unique @map("provider_tx_id")
+  status       TransactionStatus
+  metadataJson Json?             @map("metadata_json")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("transactions")
+}
+
+model Like {
+  id          String         @id @default(cuid())
+  likerUserId String         @map("liker_user_id")
+  targetType  LikeTargetType @map("target_type")
+  targetId    String         @map("target_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  liker User @relation("Liker", fields: [likerUserId], references: [id])
+
+  @@unique([likerUserId, targetType, targetId])
+  @@map("likes")
+}
+
+model FeaturedSlot {
+  id                 String   @id @default(cuid())
+  monthKey           String   @map("month_key")
+  slotIndex          Int      @map("slot_index")
+  graduationUploadId String?  @map("graduation_upload_id")
+  studentUserId      String   @map("student_user_id")
+  adminId            String   @map("admin_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  studentUser User @relation("FeaturedStudent", fields: [studentUserId], references: [id])
+  admin       User @relation("FeaturedAdmin", fields: [adminId], references: [id])
+
+  @@unique([monthKey, slotIndex])
+  @@map("featured_slots")
+}
+
+model AdminTask {
+  id          String          @id @default(cuid())
+  type        AdminTaskType
+  payloadJson Json            @map("payload_json")
+  status      AdminTaskStatus @default(OPEN)
+  createdById String?         @map("created_by_id")
+  assigneeId  String?         @map("assignee_id")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  closedAt    DateTime?       @map("closed_at")
+
+  createdBy User? @relation("AdminTaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  assignee  User? @relation("AdminTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([status, type])
+  @@map("admin_tasks")
+}
+
+model AccountGrant {
+  id               String           @id @default(cuid())
+  userId           String           @map("user_id")
+  type             AccountGrantType
+  lessonLimit      Int              @default(4) @map("lesson_limit")
+  lessonsUsed      Int              @default(0) @map("lessons_used")
+  active           Boolean          @default(true)
+  reason           String?
+  createdByAdminId String?          @map("created_by_admin_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  user           User  @relation("UserAccountGrants", fields: [userId], references: [id])
+  createdByAdmin User? @relation("AdminAccountGrants", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, active, type])
+  @@map("account_grants")
+}
+
+model CustomGroupOrder {
+  id                 String                 @id @default(cuid())
+  sourceSupportTaskId String?               @unique @map("source_support_task_id")
+  status             CustomGroupOrderStatus @default(DRAFT)
+  numberOfSeats      Int                    @map("number_of_seats")
+  claimedSeats       Int                    @default(0) @map("claimed_seats")
+  country            String
+  preferredDaysTimes String                 @map("preferred_days_times")
+  ageRange           String                 @map("age_range")
+  note               String?
+  contactEmail       String?                @map("contact_email")
+  seatPriceCents     Int                    @map("seat_price_cents")
+  totalAmountCents   Int                    @map("total_amount_cents")
+  checkoutUrl        String?                @map("checkout_url")
+  checkoutReference  String?                @map("checkout_reference")
+  paidAt             DateTime?              @map("paid_at")
+  activatedAt        DateTime?              @map("activated_at")
+  closedAt           DateTime?              @map("closed_at")
+  canceledAt         DateTime?              @map("canceled_at")
+  groupAdminUserId   String?                @map("group_admin_user_id")
+  createdByAdminId   String                 @map("created_by_admin_id")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+
+  groupAdmin    User?             @relation("CustomGroupOrderGroupAdmin", fields: [groupAdminUserId], references: [id], onDelete: SetNull)
+  createdByAdmin User             @relation("CustomGroupOrderAdmin", fields: [createdByAdminId], references: [id])
+  seats         CustomGroupSeat[]
+
+  @@index([status, createdAt])
+  @@index([groupAdminUserId])
+  @@map("custom_group_orders")
+}
+
+model CustomGroupSeat {
+  id              String                @id @default(cuid())
+  orderId          String                @map("order_id")
+  seatIndex        Int                   @map("seat_index")
+  status           CustomGroupSeatStatus @default(AVAILABLE)
+  claimToken       String                @unique @map("claim_token")
+  invitedEmail     String?               @map("invited_email")
+  claimedByUserId  String?               @map("claimed_by_user_id")
+  claimedAt        DateTime?             @map("claimed_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  order         CustomGroupOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  claimedByUser User?            @relation("CustomGroupSeatClaimant", fields: [claimedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, seatIndex])
+  @@index([orderId, status])
+  @@map("custom_group_seats")
+}
+
+model PaymentWebhookEvent {
+  id             String    @id @default(cuid())
+  provider       String    @default("TWOCHECKOUT")
+  deliveryId     String?   @unique @map("delivery_id")
+  providerTxId   String    @map("provider_tx_id")
+  payloadHash    String    @map("payload_hash")
+  signatureHash  String?   @map("signature_hash")
+  receivedStatus String    @map("received_status")
+  processed      Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  processedAt    DateTime? @map("processed_at")
+
+  @@unique([provider, providerTxId, payloadHash])
+  @@index([providerTxId, createdAt])
+  @@map("payment_webhook_events")
+}
+
+model DeviceSession {
+  id          String    @id @default(cuid())
+  userId      String    @unique @map("user_id")
+  tokenHash   String    @map("token_hash")
+  userAgent   String?   @map("user_agent")
+  ipAddress   String?   @map("ip_address")
+  countryCode String?   @map("country_code")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("device_sessions")
+}
+
+model TrialAttendance {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  streamId  String   @map("stream_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  stream Stream @relation(fields: [streamId], references: [id])
+
+  @@unique([userId, streamId])
+  @@index([userId, createdAt])
+  @@map("trial_attendances")
+}
+
+model PageContentBlock {
+  id                String   @id @default(cuid())
+  pageKey           String   @map("page_key")
+  sectionKey        String   @map("section_key")
+  title             String?
+  bodyText          String?  @map("body_text")
+  ctaLabel          String?  @map("cta_label")
+  ctaHref           String?  @map("cta_href")
+  ctaSecondaryLabel String?  @map("cta_secondary_label")
+  ctaSecondaryHref  String?  @map("cta_secondary_href")
+  imageUrl          String?  @map("image_url")
+  sortOrder         Int      @default(0) @map("sort_order")
+  isPublished       Boolean  @default(true) @map("is_published")
+  updatedByAdminId  String?  @map("updated_by_admin_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  updatedByAdmin User? @relation("PageContentBlockUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([pageKey, isPublished, sortOrder])
+  @@index([pageKey, sectionKey, sortOrder])
+  @@map("page_content_blocks")
+}
